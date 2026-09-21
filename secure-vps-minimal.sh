@@ -54,7 +54,7 @@ fi
 # ======================================================
 STORAGE="nvme_fast"           # Хранилище для диска контейнера
 TEMPLATE_STORAGE="local"      # Хранилище для образов/шаблонов
-NETWORK="name=eth0,bridge=vmbr0,ip=dhcp" # Сетевой интерфейс по умолчанию
+NETWORK="name=eth0,bridge=vmbr_mgmt,ip=dhcp" # Сетевой интерфейс по умолчанию
 
 # Автоматический поиск самого свежего шаблона Ubuntu 22.04 в репозитории Proxmox
 echo -e "\n${GREEN}[+] Обновление списка шаблонов Proxmox...${NC}"
