@@ -12,7 +12,7 @@ pveam download local $TEMPLATE
 
 # 3. Создаем контейнер ОДНОЙ строкой
 echo "[Info] Создаем контейнер с ID $CTID..."
-pct create $CTID local:vztmpl/${TEMPLATE##*/} -hostname python-dev -ostype debian -memory 1024 -cores 2 -unprivileged 1 -net0 name=eth0,bridge=vmbr0,ip=dhcp
+pct create $CTID local:vztmpl/${TEMPLATE##*/} -storage nvme_fast -hostname python-dev -ostype debian -memory 1024 -cores 2 -unprivileged 1 -net0 name=eth0,bridge=vmbr_mgmt,ip=dhcp
 
 # 4. Запуск и сеть
 pct start $CTID
