@@ -1,6 +1,6 @@
 #!/bin/bash
 
-APP_DIR="python_app_container"
+APP_DIR="app"
 
 echo "==========================================="
 echo " Настройка контейнера Debian + Python"
