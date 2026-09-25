@@ -2,7 +2,7 @@
 
 # 1. Получаем ID и очищаем его от невидимых символов
 RAW_ID=$(pvesh get /cluster/nextid)
-CTID=\((echo "\)RAW_ID" | tr -dc '0-9')
+CTID=$(echo "$RAW_ID" | tr -dc '0-9')
 
 # 2. Скачиваем шаблон
 echo "[Info] Скачиваем шаблон Debian 12..."
@@ -12,7 +12,7 @@ pveam download local $TEMPLATE
 
 # 3. Создаем контейнер ОДНОЙ строкой
 echo "[Info] Создаем контейнер с ID $CTID..."
-pct create \(CTID local:vztmpl/\){TEMPLATE##*/} -hostname python-dev -ostype debian -memory 1024 -cores 2 -unprivileged 1 -net0 name=eth0,bridge=vmbr0,ip=dhcp
+pct create $CTID local:vztmpl/${TEMPLATE##*/} -hostname python-dev -ostype debian -memory 1024 -cores 2 -unprivileged 1 -net0 name=eth0,bridge=vmbr0,ip=dhcp
 
 # 4. Запуск и сеть
 pct start $CTID
