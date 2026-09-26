@@ -11,8 +11,9 @@ NC='\033[0m'
 
 LOG_FILE="/root/homelab_setup.log"
 
-log() { echo -e "${GREEN}[+]${NC} $1" | tee -a "$LOG_FILE"; }
-error() { echo -e "${RED}[-]${NC} $1" | tee -a "$LOG_FILE"; exit 1; }
+log() { echo -e "\({GREEN}[+]\){NC} $1" | tee -a "$LOG_FILE"; }
+error() { echo -e "\({RED}[-]\){NC} $1" | tee -a "$LOG_FILE"; exit 1; }
+warn() { echo -e "\({YELLOW}[!]\){NC} $1" | tee -a "$LOG_FILE"; }
 
 # ======================================================
 # 1. БАЗОВЫЕ ПРОВЕРКИ И ИНТЕРАКТИВНЫЙ ВВОД
@@ -22,30 +23,38 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 clear
-echo -e "${GREEN}======================================================${NC}"
-echo -e "${GREEN}      ИНТЕРАКТИВНАЯ НАСТРОЙКА HOMELAB СЕРВЕРА         ${NC}"
-echo -e "${GREEN}======================================================${NC}"
+echo -e "\({GREEN}======================================================\){NC}"
+echo -e "\({GREEN}      ИНТЕРАКТИВНАЯ НАСТРОЙКА HOMELAB СЕРВЕРА\){NC}"
+echo -e "\({GREEN}======================================================\){NC}"
 
-# Нейтральное имя пользователя
 USERNAME="sysadmin"
-echo -e "Будет настроен пользователь: ${YELLOW}$USERNAME${NC}"
+echo -e "Будет настроен пользователь: \({YELLOW}\)USERNAME${NC}"
 
-# Интерактивный запрос пароля
-read -s -p "Введите простой пароль для пользователя $USERNAME: " USER_PASSWORD
+# Ввод пароля с удалением невидимых символов Windows (\r)
+read -s -p "Введите пароль для пользователя $USERNAME: " RAW_PASS
 echo
-read -s -p "Повторите пароль: " USER_PASSWORD_CONFIRM
+read -s -p "Повторите пароль: " RAW_PASS_CONFIRM
 echo
 
-if [[ "$USER_PASSWORD" != "$USER_PASSWORD_CONFIRM" ]]; then
+USER_PASSWORD=\((echo "\)RAW_PASS" | tr -d '\r')
+USER_PASSWORD_CONFIRM=\((echo "\)RAW_PASS_CONFIRM" | tr -d '\r')
+
+if [[ "\(USER_PASSWORD" != "\)USER_PASSWORD_CONFIRM" ]]; then
     error "Пароли не совпадают! Перезапустите скрипт."
 fi
 
-# Интерактивный запрос SSH-ключа
-echo -e "\nВставьте ваш публичный SSH ключ (начинается с ssh-rsa, ssh-ed25519 и т.д.):"
-read -r LOCAL_PUB_KEY
+# Ввод ключа с удалением ВСЕХ переносов строк и скрытых символов
+echo -e "\nВставьте ваш публичный SSH ключ:"
+read -r RAW_KEY
+LOCAL_PUB_KEY=\((echo "\)RAW_KEY" | tr -d '\r\n')
 
 if [[ -z "$LOCAL_PUB_KEY" ]]; then
     error "SSH ключ не может быть пустым!"
+fi
+
+if [[ "$LOCAL_PUB_KEY" == ssh-rsa* ]]; then
+    warn "Используется устаревший ключ RSA (ssh-rsa). На новых ОС он может быть отклонен!"
+    warn "Рекомендуется сгенерировать ключ формата Ed25519."
 fi
 
 # ======================================================
@@ -54,16 +63,11 @@ fi
 log "Обновление системы и установка базовых утилит..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y -q >/dev/null
-apt-get upgrade -y -q >/dev/null
-
-# Устанавливаем базовые утилиты и qemu-guest-agent
 apt-get install -y -q curl wget htop git qemu-guest-agent >/dev/null
-
-# Включаем агента гостевой ОС
 systemctl enable --now qemu-guest-agent >/dev/null 2>&1 || true
 
 # ======================================================
-# 3. СОЗДАНИЕ ПОЛЬЗОВАТЕЛЯ И НАСТРОЙКА ПАРОЛЯ
+# 3. СОЗДАНИЕ ПОЛЬЗОВАТЕЛЯ И ПРАВА
 # ======================================================
 if ! id "$USERNAME" &>/dev/null; then
     log "Создание пользователя $USERNAME..."
@@ -72,51 +76,37 @@ else
     log "Пользователь $USERNAME уже существует."
 fi
 
-# Установка заданного пароля
-echo "$USERNAME:$USER_PASSWORD" | chpasswd
+echo "\(USERNAME:\)USER_PASSWORD" | chpasswd
 usermod -aG sudo "$USERNAME"
 
-# Безопасный sudoers (без пароля)
-log "Настройка беспарольного доступа к sudo..."
-cat > /etc/sudoers.d/"$USERNAME" <<EOF
-$USERNAME ALL=(ALL) NOPASSWD:ALL
-EOF
-chmod 440 /etc/sudoers.d/"$USERNAME"
+# Проверка на наличие жестких ограничений групп в SSH
+if grep -q "^AllowGroups.*_ssh" /etc/ssh/sshd_config; then
+    log "Обнаружено ограничение AllowGroups. Добавляем пользователя в группу _ssh..."
+    groupadd -f _ssh
+    usermod -aG _ssh "$USERNAME"
+fi
 
-# ======================================================
-# 4. УСТАНОВКА SSH КЛЮЧЕЙ
-# ======================================================
-log "Настройка авторизации по ключам..."
-mkdir -p /home/"$USERNAME"/.ssh
-echo "$LOCAL_PUB_KEY" > /home/"$USERNAME"/.ssh/authorized_keys
-chown -R "$USERNAME":"$USERNAME" /home/"$USERNAME"/.ssh
+log "Настройка беспарольного доступа к sudo..."
+cat > /etc/sudoers.d/"$USERNAME" < /home/"$USERNAME"/.ssh/authorized_keys
+chown -R "\(USERNAME":"\)USERNAME" /home/"$USERNAME"/.ssh
 chmod 700 /home/"$USERNAME"/.ssh
 chmod 600 /home/"$USERNAME"/.ssh/authorized_keys
 
-# Добавляем ключ и root-пользователю
 mkdir -p /root/.ssh
 echo "$LOCAL_PUB_KEY" > /root/.ssh/authorized_keys
 chmod 700 /root/.ssh
 chmod 600 /root/.ssh/authorized_keys
 
 # ======================================================
-# 5. СИНХРОНИЗАЦИЯ ВРЕМЕНИ
-# ======================================================
-log "Синхронизация времени..."
-timedatectl set-timezone UTC
-timedatectl set-ntp true
-
-# ======================================================
-# 6. ФИНАЛ
+# 5. ФИНАЛ
 # ======================================================
 SERVER_IP=$(hostname -I | awk '{print $1}')
+systemctl restart ssh
 
 clear
-echo -e "${GREEN}======================================================${NC}"
-echo -e "${GREEN} ✅ HOMELAB СЕРВЕР УСПЕШНО НАСТРОЕН${NC}"
-echo -e "${GREEN}======================================================${NC}"
-echo -e "Пользователь: ${YELLOW}$USERNAME${NC}"
-echo -e "SSH порт: ${YELLOW}22 (стандартный)${NC}"
-echo -e "Вход по ключу: ${YELLOW}ssh $USERNAME@$SERVER_IP${NC}"
-echo -e "Sudo: ${YELLOW}Без пароля (NOPASSWD)${NC}"
+echo -e "\({GREEN}======================================================\){NC}"
+echo -e "\({GREEN} ✅ HOMELAB СЕРВЕР УСПЕШНО НАСТРОЕН\){NC}"
+echo -e "\({GREEN}======================================================\){NC}"
+echo -e "Пользователь: \({YELLOW}\)USERNAME${NC}"
+echo -e "Вход по ключу: \({YELLOW}ssh\)USERNAME@\(SERVER_IP\){NC}"
 echo -e "======================================================"
